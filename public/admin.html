@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Admin</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        h2 {
+            margin-top: 0;
+        }
+
+        input,
+        button {
+            padding: 8px;
+            margin: 5px 0;
+        }
+
+        .question-item {
+            background: #f9f9f9;
+            padding: 10px;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Quiz Admin Panel</h1>
+
+    <div class="section">
+        <h2>1. Connect TikTok</h2>
+        <input type="text" id="tiktokUsername" placeholder="@username">
+        <button onclick="connectTikTok()">Connect</button>
+        <div id="connectionStatus">Not connected</div>
+    </div>
+
+    <div class="section">
+        <h2>2. Manage Questions</h2>
+        <input type="text" id="qText" placeholder="Question Text" style="width: 100%"><br>
+        <input type="text" id="qOption1" placeholder="Option A">
+        <input type="text" id="qOption2" placeholder="Option B"><br>
+        <input type="text" id="qOption3" placeholder="Option C">
+        <input type="text" id="qOption4" placeholder="Option D"><br>
+        <input type="text" id="qAnswer" placeholder="Correct Answer (e.g. 'Paris')">
+        <button onclick="addQuestion()">Add Question</button>
+
+        <h3>Current Questions:</h3>
+        <div id="questionsList"></div>
+    </div>
+
+    <div class="section">
+        <h2>3. Game Control</h2>
+        <button onclick="startGame()" style="background-color: #4CAF50; color: white;">Start New Game</button>
+        <button onclick="nextQuestion()" style="background-color: #008CBA; color: white;">Next Question / Start
+            Q1</button>
+        <div id="gameStatus">Status: WAITING</div>
+    </div>
+
+    <script>
+        const socket = io();
+
+        socket.on('tiktok:connected', (data) => {
+            document.getElementById('connectionStatus').textContent = `Connected to ${data.username} (Room: ${data.roomId})`;
+            document.getElementById('connectionStatus').style.color = 'green';
+        });
+
+        socket.on('tiktok:error', (msg) => {
+            document.getElementById('connectionStatus').textContent = `Error: ${msg}`;
+            document.getElementById('connectionStatus').style.color = 'red';
+        });
+
+        socket.on('admin:questions_updated', (questions) => {
+            const list = document.getElementById('questionsList');
+            list.innerHTML = '';
+            questions.forEach((q, i) => {
+                const div = document.createElement('div');
+                div.className = 'question-item';
+                div.innerHTML = `<strong>Q${i + 1}:</strong> ${q.question} <br> <em>Ans: ${q.answer}</em>`;
+                list.appendChild(div);
+            });
+        });
+
+        socket.on('game:state', (state) => {
+            document.getElementById('gameStatus').textContent = `Status: ${state.status} | Q: ${state.question ? state.question.question : '-'}`;
+        });
+
+        function connectTikTok() {
+            const username = document.getElementById('tiktokUsername').value;
+            if (username) socket.emit('admin:connect_tiktok', username);
+        }
+
+        function addQuestion() {
+            const question = {
+                question: document.getElementById('qText').value,
+                options: [
+                    document.getElementById('qOption1').value,
+                    document.getElementById('qOption2').value,
+                    document.getElementById('qOption3').value,
+                    document.getElementById('qOption4').value
+                ],
+                answer: document.getElementById('qAnswer').value
+            };
+
+            if (question.question && question.answer) {
+                socket.emit('admin:add_question', question);
+                // Clear inputs
+                document.getElementById('qText').value = '';
+                document.getElementById('qAnswer').value = '';
+                document.getElementById('qOption1').value = '';
+                document.getElementById('qOption2').value = '';
+                document.getElementById('qOption3').value = '';
+                document.getElementById('qOption4').value = '';
+            } else {
+                alert('Please fill in Question and Answer');
+            }
+        }
+
+        function startGame() {
+            if (confirm('Start a new game? This will reset scores.')) {
+                socket.emit('admin:start_game');
+            }
+        }
+
+        function nextQuestion() {
+            socket.emit('admin:next_question');
+        }
+    </script>
+</body>
+
+</html>

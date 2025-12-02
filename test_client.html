@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TikTok Live Test Client</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        #logs { height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-top: 10px; }
+        .event { margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <h1>TikTok Live Test</h1>
+    <input type="text" id="username" placeholder="Enter TikTok Username (@username)">
+    <button onclick="connect()">Connect</button>
+    <div id="logs"></div>
+
+    <script>
+        // Connect to your Render backend
+        const socket = io("https://newtiktokgoogle.onrender.com");
+
+        const logs = document.getElementById('logs');
+        function log(message, color = 'black') {
+            const div = document.createElement('div');
+            div.className = 'event';
+            div.style.color = color;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logs.prepend(div);
+        }
+
+        socket.on('connect', () => {
+            log('Connected to Proxy Server', 'green');
+        });
+
+        socket.on('connected', (state) => {
+            log(`Connected to TikTok Live! Room ID: ${state.roomId}`, 'blue');
+        });
+
+        socket.on('chat', (data) => {
+            log(`${data.uniqueId}: ${data.comment}`, 'black');
+        });
+
+        socket.on('gift', (data) => {
+            log(`${data.uniqueId} sent ${data.giftName} x${data.repeatCount}`, 'purple');
+        });
+
+        socket.on('like', (data) => {
+            log(`${data.uniqueId} liked the stream x${data.likeCount}`, 'orange');
+        });
+
+        socket.on('error', (err) => {
+            log(`Error: ${err}`, 'red');
+        });
+
+        function connect() {
+            const username = document.getElementById('username').value;
+            if (username) {
+                log(`Requesting connection to ${username}...`, 'gray');
+                socket.emit('join', username);
+            } else {
+                alert('Please enter a username');
+            }
+        }
+    </script>
+</body>
+</html>

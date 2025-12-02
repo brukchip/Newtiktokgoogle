@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TikTok Live Quiz</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;700;900&display=swap');
+
+        body {
+            margin: 0;
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #app {
+            text-align: center;
+            width: 90%;
+            max-width: 800px;
+        }
+
+        /* Screens */
+        .screen {
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .screen.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Waiting Screen */
+        h1 {
+            font-size: 3rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            margin-bottom: 10px;
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.05);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        /* Question Screen */
+        .question-box {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+
+        .question-text {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 30px;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .option {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 15px;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        /* Timer Bar */
+        .timer-container {
+            width: 100%;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            margin-top: 30px;
+            overflow: hidden;
+        }
+
+        .timer-bar {
+            height: 100%;
+            background: #ff0050;
+            /* TikTok Red */
+            width: 100%;
+            transition: width 1s linear;
+        }
+
+        /* Leaderboard */
+        .leaderboard-list {
+            list-style: none;
+            padding: 0;
+            text-align: left;
+        }
+
+        .leaderboard-item {
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+            margin: 10px 0;
+            padding: 15px 20px;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 1.2rem;
+            font-weight: bold;
+            transform: translateX(-100%);
+            animation: slideIn 0.5s forwards;
+        }
+
+        @keyframes slideIn {
+            to {
+                transform: translateX(0);
+            }
+        }
+
+        /* Chat Overlay (Optional) */
+        #chat-overlay {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 300px;
+            height: 200px;
+            overflow: hidden;
+            pointer-events: none;
+            opacity: 0.7;
+        }
+
+        .chat-msg {
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+            text-shadow: 1px 1px 2px black;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="app">
+        <!-- Waiting Screen -->
+        <div id="screen-waiting" class="screen active">
+            <h1 class="pulse">Waiting for Host...</h1>
+            <p>Join the Live and get ready!</p>
+        </div>
+
+        <!-- Question Screen -->
+        <div id="screen-question" class="screen">
+            <div class="question-box">
+                <div id="q-text" class="question-text">Question goes here?</div>
+                <div id="q-options" class="options-grid">
+                    <!-- Options injected here -->
+                </div>
+                <div class="timer-container">
+                    <div id="timer-bar" class="timer-bar"></div>
+                </div>
+                <div id="timer-text" style="margin-top: 10px; font-size: 1.5rem; font-weight: bold;">10</div>
+            </div>
+        </div>
+
+        <!-- Leaderboard Screen -->
+        <div id="screen-leaderboard" class="screen">
+            <h1>Leaderboard</h1>
+            <ul id="leaderboard-list" class="leaderboard-list">
+                <!-- Items injected here -->
+            </ul>
+        </div>
+    </div>
+
+    <div id="chat-overlay"></div>
+
+    <script>
+        const socket = io();
+
+        // State Elements
+        const screens = {
+            WAITING: document.getElementById('screen-waiting'),
+            QUESTION: document.getElementById('screen-question'),
+            LEADERBOARD: document.getElementById('screen-leaderboard'),
+            END: document.getElementById('screen-leaderboard') // Reuse leaderboard for end
+        };
+
+        // UI Elements
+        const qText = document.getElementById('q-text');
+        const qOptions = document.getElementById('q-options');
+        const timerBar = document.getElementById('timer-bar');
+        const timerText = document.getElementById('timer-text');
+        const lbList = document.getElementById('leaderboard-list');
+        const chatOverlay = document.getElementById('chat-overlay');
+
+        socket.on('game:state', (state) => {
+            showScreen(state.status);
+            if (state.status === 'QUESTION' && state.question) {
+                renderQuestion(state.question);
+                updateTimer(state.timeRemaining);
+            }
+            if (state.status === 'LEADERBOARD' || state.status === 'END') {
+                renderLeaderboard(state.leaderboard);
+            }
+        });
+
+        socket.on('game:question', (data) => {
+            showScreen('QUESTION');
+            renderQuestion(data);
+            updateTimer(data.time);
+        });
+
+        socket.on('game:timer', (time) => {
+            updateTimer(time);
+        });
+
+        socket.on('game:leaderboard', (leaderboard) => {
+            showScreen('LEADERBOARD');
+            renderLeaderboard(leaderboard);
+        });
+
+        socket.on('game:end', (leaderboard) => {
+            showScreen('LEADERBOARD'); // Or a specific end screen
+            renderLeaderboard(leaderboard);
+            // Maybe add "Game Over" text
+        });
+
+        socket.on('chat', (data) => {
+            const div = document.createElement('div');
+            div.className = 'chat-msg';
+            div.innerHTML = `<strong>${data.uniqueId}:</strong> ${data.comment}`;
+            chatOverlay.appendChild(div);
+            if (chatOverlay.children.length > 10) chatOverlay.removeChild(chatOverlay.firstChild);
+        });
+
+        function showScreen(status) {
+            Object.values(screens).forEach(el => el.classList.remove('active'));
+            if (screens[status]) screens[status].classList.add('active');
+        }
+
+        function renderQuestion(data) {
+            qText.textContent = data.question;
+            qOptions.innerHTML = '';
+            if (data.options && data.options.length) {
+                data.options.forEach((opt, i) => {
+                    if (opt) {
+                        const div = document.createElement('div');
+                        div.className = 'option';
+                        div.textContent = opt;
+                        qOptions.appendChild(div);
+                    }
+                });
+            }
+        }
+
+        function updateTimer(time) {
+            timerText.textContent = time;
+            const percentage = (time / 10) * 100;
+            timerBar.style.width = `${percentage}%`;
+
+            if (time <= 3) {
+                timerBar.style.background = '#ff0000';
+            } else {
+                timerBar.style.background = '#ff0050';
+            }
+        }
+
+        function renderLeaderboard(data) {
+            lbList.innerHTML = '';
+            data.forEach((player, i) => {
+                const li = document.createElement('li');
+                li.className = 'leaderboard-item';
+                li.style.animationDelay = `${i * 0.1}s`;
+                li.innerHTML = `<span>#${i + 1} ${player.username}</span> <span>${player.score} pts</span>`;
+                lbList.appendChild(li);
+            });
+        }
+    </script>
+</body>
+
+</html>
